@@ -1,11 +1,18 @@
 {
   "name": "si-quick-edit-variables",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "private": true,
+  "license": "MIT",
+  "author": "Smart Impact",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/siit-dev/si-figma-quick-edit-variables.git"
+  },
   "type": "module",
   "scripts": {
     "dev": "vite --config vite.ui.config.ts",
     "build": "npm run clean && npm run build:main && npm run build:ui",
+    "release:check": "node scripts/verify-release.mjs",
     "build:main": "vite build --config vite.main.config.ts && node scripts/verify-sandbox.mjs",
     "build:ui": "vite build --config vite.ui.config.ts && node scripts/finalize-ui.mjs",
     "clean": "node scripts/clean.mjs",

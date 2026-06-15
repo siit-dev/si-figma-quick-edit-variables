@@ -3,12 +3,14 @@ import type {
   AppTab,
   BindingOccurrence,
   DiffScanPayload,
+  DiffCodePreferences,
   MainToUiMessage,
   MutationDraft,
   ScanPayload,
   SharedSettingsV1,
   WindowSize,
 } from '../shared/types'
+import { DEFAULT_DIFF_CODE_PREFERENCES } from '../shared/diff-code-preferences'
 import { send, subscribe } from './messaging'
 import { EditPanel } from './components/EditPanel'
 import { SettingsPanel } from './components/SettingsPanel'
@@ -18,6 +20,8 @@ import { DiffPanel } from './components/DiffPanel'
 export function App() {
   const [payload, setPayload] = useState<ScanPayload | null>(null)
   const [diffPayload, setDiffPayload] = useState<DiffScanPayload | null>(null)
+  const [diffCodePreferences, setDiffCodePreferences] =
+    useState<DiffCodePreferences>(DEFAULT_DIFF_CODE_PREFERENCES)
   const [activeTab, setActiveTab] = useState<AppTab>('variables')
   const [windowSize, setWindowSize] = useState<WindowSize>({ width: 420, height: 640 })
   const [editing, setEditing] = useState<BindingOccurrence | null>(null)
@@ -45,6 +49,7 @@ export function App() {
         setDiffPayload(message.diffPayload ?? null)
         setActiveTab(message.activeTab)
         setWindowSize(message.windowSize)
+        setDiffCodePreferences(message.diffCodePreferences)
         break
       case 'SCAN_RESULT':
         setPayload(message.payload)
@@ -57,6 +62,9 @@ export function App() {
       case 'ACTIVE_TAB_RESULT':
         setActiveTab(message.activeTab)
         if (message.activeTab === 'diff') setEditing(null)
+        break
+      case 'DIFF_CODE_PREFS_RESULT':
+        setDiffCodePreferences(message.preferences)
         break
       case 'SELECTION_CHANGED':
         setSelectionWarning(message.hasDraft)
@@ -147,7 +155,7 @@ export function App() {
           <div className="eyebrow">
             {activeTab === 'variables' ? 'Selected variables' : 'Instance override audit'}
           </div>
-          <h1>SmartImpact Quick Edit</h1>
+          <h1>SmartImpact Figma Quick Edit Variables</h1>
         </div>
         <div className="top-actions">
           <button
@@ -285,7 +293,14 @@ export function App() {
         <span>{payload.variables.filter((variable) => !variable.excluded).length} picker variables</span>
       </footer>
       </> : (
-        <DiffPanel payload={diffPayload} />
+        <DiffPanel
+          payload={diffPayload}
+          preferences={diffCodePreferences}
+          onPreferences={(preferences) => {
+            setDiffCodePreferences(preferences)
+            send({ type: 'SAVE_DIFF_CODE_PREFS', preferences })
+          }}
+        />
       )}
 
       {activeTab === 'variables' && editing ? (

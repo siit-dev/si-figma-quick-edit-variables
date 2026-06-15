@@ -1,99 +1,18 @@
-import type { DiffCategory, DiffValue, SerializableColor } from './types'
-
-const CATEGORY_FIELDS: Record<DiffCategory, Set<string>> = {
-  'component-properties': new Set(['componentProperties', 'componentPropertyReferences']),
-  content: new Set(['characters', 'text', 'visible', 'name', 'mediaData', 'embedData', 'linkUnfurlData']),
-  appearance: new Set([
-    'fills',
-    'strokes',
-    'opacity',
-    'blendMode',
-    'effects',
-    'fillStyleId',
-    'strokeStyleId',
-    'effectStyleId',
-    'cornerRadius',
-    'cornerSmoothing',
-    'topLeftRadius',
-    'topRightRadius',
-    'bottomLeftRadius',
-    'bottomRightRadius',
-  ]),
-  typography: new Set([
-    'fontName',
-    'fontSize',
-    'lineHeight',
-    'letterSpacing',
-    'paragraphIndent',
-    'paragraphSpacing',
-    'textAlignHorizontal',
-    'textAlignVertical',
-    'textCase',
-    'textDecoration',
-    'textStyleId',
-    'styledTextSegments',
-  ]),
-  layout: new Set([
-    'width',
-    'height',
-    'minWidth',
-    'maxWidth',
-    'minHeight',
-    'maxHeight',
-    'x',
-    'y',
-    'relativeTransform',
-    'rotation',
-    'constraints',
-    'layoutMode',
-    'layoutWrap',
-    'layoutGrids',
-    'gridStyleId',
-    'paddingLeft',
-    'paddingTop',
-    'paddingRight',
-    'paddingBottom',
-    'itemSpacing',
-    'counterAxisSpacing',
-    'layoutAlign',
-    'layoutGrow',
-    'layoutPositioning',
-    'primaryAxisSizingMode',
-    'counterAxisSizingMode',
-    'primaryAxisAlignItems',
-    'counterAxisAlignItems',
-    'clipsContent',
-    'overflowDirection',
-  ]),
-  prototype: new Set([
-    'reactions',
-    'hyperlink',
-    'flowStartingPoints',
-    'overlayPositionType',
-    'overlayBackgroundInteraction',
-    'overlayBackground',
-    'prototypeStartNode',
-    'prototypeBackgrounds',
-  ]),
-  other: new Set(),
-}
+import type {
+  DiffCategory,
+  DiffValue,
+  SerializableColor,
+  VariableProvenance,
+} from './types'
 
 export const DIFF_CATEGORIES: Array<{ id: DiffCategory; label: string }> = [
-  { id: 'component-properties', label: 'Component properties' },
-  { id: 'content', label: 'Content' },
   { id: 'appearance', label: 'Appearance' },
   { id: 'typography', label: 'Typography' },
-  { id: 'layout', label: 'Layout' },
-  { id: 'prototype', label: 'Prototype' },
-  { id: 'other', label: 'Other' },
+  { id: 'spacing', label: 'Spacing' },
+  { id: 'geometry', label: 'Geometry' },
+  { id: 'visibility', label: 'Visibility' },
+  { id: 'structure', label: 'Structure' },
 ]
-
-export function categoryForField(field: string): DiffCategory {
-  for (const [category, fields] of Object.entries(CATEGORY_FIELDS)) {
-    if (fields.has(field)) return category as DiffCategory
-  }
-  return 'other'
-}
 
 export function friendlyFieldLabel(field: string): string {
   return field
@@ -101,43 +20,68 @@ export function friendlyFieldLabel(field: string): string {
     .replace(/^./, (character) => character.toUpperCase())
 }
 
-export function friendlyPropertyName(propertyKey: string): string {
-  return propertyKey.replace(/#[^#]+$/, '')
-}
-
-export function normalizeDiffValue(value: unknown): DiffValue {
+export function normalizeDiffValue(
+  value: unknown,
+  options: {
+    unit?: string
+    tokens?: VariableProvenance[]
+    preview?: string
+  } = {},
+): DiffValue {
+  const tokens = options.tokens?.length ? options.tokens : undefined
   if (value === undefined) {
-    return { preview: 'Original unavailable', detail: '', kind: 'unavailable' }
+    return { preview: 'Unavailable', detail: '', kind: 'unavailable', tokens }
   }
-  if (value === null) return { preview: 'None', detail: 'null', kind: 'empty' }
+  if (value === null) {
+    return { preview: 'None', detail: 'null', kind: 'empty', tokens }
+  }
   if (typeof value === 'string') {
     return {
-      preview: value.length > 80 ? `${value.slice(0, 77)}...` : value,
+      preview:
+        options.preview ??
+        (value.length > 80 ? `${value.slice(0, 77)}...` : value),
       detail: JSON.stringify(value),
       kind: 'scalar',
+      tokens,
     }
   }
   if (typeof value === 'number' || typeof value === 'boolean') {
-    return { preview: String(value), detail: String(value), kind: 'scalar' }
+    return {
+      preview:
+        options.preview ??
+        `${formatNumber(value)}${typeof value === 'number' && options.unit ? ` ${options.unit}` : ''}`,
+      detail: String(value),
+      kind: 'scalar',
+      tokens,
+    }
   }
   if (isColor(value)) {
+    const normalizedColor = {
+      r: round(value.r),
+      g: round(value.g),
+      b: round(value.b),
+      ...(value.a === undefined ? {} : { a: round(value.a) }),
+    }
     return {
-      preview: colorToHex(value),
-      detail: stableStringify(value),
+      preview: options.preview ?? colorToHex(value),
+      detail: stableStringify(normalizedColor),
       kind: 'color',
       color: value,
+      tokens,
     }
   }
   const normalized = normalizeComplex(value)
   const detail = stableStringify(normalized)
   return {
-    preview: summarizeComplex(normalized),
+    preview: options.preview ?? summarizeComplex(normalized),
     detail,
     kind: 'complex',
+    tokens,
   }
 }
 
 function normalizeComplex(value: unknown, seen = new WeakSet<object>()): unknown {
+  if (typeof value === 'number') return round(value)
   if (value === null || typeof value !== 'object') return value
   if (seen.has(value)) return '[Circular]'
   seen.add(value)
@@ -153,6 +97,7 @@ function normalizeComplex(value: unknown, seen = new WeakSet<object>()): unknown
       next = '[Unavailable]'
     }
     if (typeof next === 'function' || typeof next === 'symbol') continue
+    if (key === 'boundVariables') continue
     output[key] = normalizeComplex(next, seen)
   }
   return output
@@ -174,6 +119,15 @@ function stableStringify(value: unknown): string {
   } catch {
     return String(value)
   }
+}
+
+function formatNumber(value: number | boolean): string {
+  if (typeof value === 'boolean') return String(value)
+  return Number.isInteger(value) ? String(value) : String(Math.round(value * 1000) / 1000)
+}
+
+function round(value: number): number {
+  return Math.round(value * 100000) / 100000
 }
 
 function isColor(value: unknown): value is SerializableColor {
@@ -199,4 +153,3 @@ function colorToHex(color: SerializableColor): string {
 export function valuesEqual(left: unknown, right: unknown): boolean {
   return normalizeDiffValue(left).detail === normalizeDiffValue(right).detail
 }
-

@@ -1,13 +1,22 @@
 export type ResolvedType = 'BOOLEAN' | 'COLOR' | 'FLOAT' | 'STRING'
 export type AppTab = 'variables' | 'diff'
 export type DiffCategory =
-  | 'component-properties'
-  | 'content'
   | 'appearance'
   | 'typography'
-  | 'layout'
-  | 'prototype'
-  | 'other'
+  | 'spacing'
+  | 'geometry'
+  | 'visibility'
+  | 'structure'
+export type DiffCodeScope =
+  | 'matched-properties'
+  | 'selected-categories'
+  | 'full-layers'
+
+export type DiffCodePreferences = {
+  scope: DiffCodeScope
+  height: number
+  collapsed: boolean
+}
 export type AdapterKind =
   | 'node-field'
   | 'text-field'
@@ -133,18 +142,26 @@ export type DiffValue = {
   detail: string
   kind: 'empty' | 'scalar' | 'color' | 'complex' | 'unavailable'
   color?: SerializableColor
+  tokens?: VariableProvenance[]
 }
 
-export type ComponentPropertyDifference = {
-  id: string
-  propertyKey: string
-  propertyName: string
-  propertyType: string
-  original: DiffValue
-  current: DiffValue
+export type VariableAliasStep = {
+  variableId: string
+  variableName: string
+  collectionId: string
+  collectionName: string
+  modeId: string
+  modeName: string
 }
 
-export type LayerFieldDifference = {
+export type VariableProvenance = VariableAliasStep & {
+  resolvedType: ResolvedType | 'UNKNOWN'
+  resolvedPreview: string
+  status: 'resolved' | 'missing' | 'cycle' | 'unavailable'
+  aliasChain: VariableAliasStep[]
+}
+
+export type VisualDifference = {
   id: string
   affectedNodeId: string
   affectedNodeName: string
@@ -155,7 +172,6 @@ export type LayerFieldDifference = {
   category: DiffCategory
   original: DiffValue
   current: DiffValue
-  mapping: 'exact' | 'unavailable'
 }
 
 export type DiffLayerGroup = {
@@ -163,7 +179,15 @@ export type DiffLayerGroup = {
   nodeName: string
   nodeType: string
   nodePath: string[]
-  differences: LayerFieldDifference[]
+  differences: VisualDifference[]
+  currentProperties: VisualStyleProperty[]
+}
+
+export type VisualStyleProperty = {
+  field: string
+  label: string
+  category: Exclude<DiffCategory, 'structure'>
+  value: DiffValue
 }
 
 export type InstanceDiff = {
@@ -173,7 +197,6 @@ export type InstanceDiff = {
   mainComponentId: string | null
   mainComponentName: string
   mainComponentRemote: boolean
-  componentProperties: ComponentPropertyDifference[]
   layers: DiffLayerGroup[]
   differenceCount: number
 }
@@ -217,10 +240,12 @@ export type MainToUiMessage =
       diffPayload?: DiffScanPayload
       activeTab: AppTab
       windowSize: WindowSize
+      diffCodePreferences: DiffCodePreferences
     }
   | { type: 'SCAN_RESULT'; payload: ScanPayload }
   | { type: 'DIFF_RESULT'; payload: DiffScanPayload }
   | { type: 'ACTIVE_TAB_RESULT'; activeTab: AppTab }
+  | { type: 'DIFF_CODE_PREFS_RESULT'; preferences: DiffCodePreferences }
   | { type: 'SELECTION_CHANGED'; hasDraft: boolean }
   | { type: 'MUTATION_RESULT'; payload: ScanPayload; message: string }
   | { type: 'SETTINGS_RESULT'; payload: ScanPayload }
@@ -236,6 +261,7 @@ export type UiToMainMessage =
   | { type: 'SET_ACTIVE_TAB'; activeTab: AppTab }
   | { type: 'REQUEST_DIFF_SCAN'; useCurrentSelection?: boolean }
   | { type: 'NAVIGATE_DIFF'; nodeId: string }
+  | { type: 'SAVE_DIFF_CODE_PREFS'; preferences: DiffCodePreferences }
 
 export type WindowSize = {
   width: number

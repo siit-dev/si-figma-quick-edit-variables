@@ -1,15 +1,27 @@
 import { useMemo, useState, type ReactNode } from 'react'
 import { DIFF_CATEGORIES } from '../../shared/diff'
+import { generateDiffCss } from '../../shared/css-generator'
+import { clampDiffCodePanelHeight } from '../../shared/diff-code-preferences'
 import type {
-  ComponentPropertyDifference,
+  DiffCodePreferences,
+  DiffCodeScope,
   DiffCategory,
   DiffScanPayload,
   DiffValue,
-  LayerFieldDifference,
+  VariableProvenance,
+  VisualDifference,
 } from '../../shared/types'
 import { send } from '../messaging'
 
-export function DiffPanel({ payload }: { payload: DiffScanPayload | null }) {
+export function DiffPanel({
+  payload,
+  preferences,
+  onPreferences,
+}: {
+  payload: DiffScanPayload | null
+  preferences: DiffCodePreferences
+  onPreferences: (preferences: DiffCodePreferences) => void
+}) {
   const [search, setSearch] = useState('')
   const [categories, setCategories] = useState<Set<DiffCategory>>(new Set())
 
@@ -21,11 +33,6 @@ export function DiffPanel({ payload }: { payload: DiffScanPayload | null }) {
 
     return payload.instances
       .map((instance) => {
-        const componentProperties = categoryAllowed('component-properties')
-          ? instance.componentProperties.filter((difference) =>
-              matchesComponentProperty(difference, query, instance.instanceName),
-            )
-          : []
         const layers = instance.layers
           .map((layer) => ({
             ...layer,
@@ -38,15 +45,24 @@ export function DiffPanel({ payload }: { payload: DiffScanPayload | null }) {
           .filter((layer) => layer.differences.length > 0)
         return {
           ...instance,
-          componentProperties,
           layers,
-          visibleCount:
-            componentProperties.length +
-            layers.reduce((total, layer) => total + layer.differences.length, 0),
+          visibleCount: layers.reduce(
+            (total, layer) => total + layer.differences.length,
+            0,
+          ),
         }
       })
       .filter((instance) => instance.visibleCount > 0)
   }, [categories, payload, search])
+  const css = useMemo(
+    () =>
+      generateDiffCss({
+        instances: filtered,
+        activeCategories: categories,
+        scope: preferences.scope,
+      }),
+    [categories, filtered, preferences.scope],
+  )
 
   if (!payload) {
     return <div className="loading">Comparing selected instances...</div>
@@ -62,7 +78,7 @@ export function DiffPanel({ payload }: { payload: DiffScanPayload | null }) {
   }
 
   return (
-    <>
+    <div className="diff-panel-shell">
       <label className="search-field main-search">
         <span aria-hidden="true">/</span>
         <input
@@ -89,7 +105,7 @@ export function DiffPanel({ payload }: { payload: DiffScanPayload | null }) {
         ) : payload.discoveredInstanceCount === 0 ? (
           <DiffEmpty title="No instances found." body="Select an instance or a frame, group, or component containing instances." />
         ) : payload.instances.length === 0 ? (
-          <DiffEmpty title="No direct overrides." body={`${payload.unchangedInstanceCount} unchanged instance${payload.unchangedInstanceCount === 1 ? '' : 's'} found.`} />
+          <DiffEmpty title="No visible differences." body={`${payload.unchangedInstanceCount} visually unchanged instance${payload.unchangedInstanceCount === 1 ? '' : 's'} found.`} />
         ) : filtered.length === 0 ? (
           <DiffEmpty title="No differences match." body="Clear the search or category filters." compact />
         ) : (
@@ -108,27 +124,6 @@ export function DiffPanel({ payload }: { payload: DiffScanPayload | null }) {
                 {instance.mainComponentRemote ? <span className="badge">Library</span> : null}
               </div>
 
-              {instance.componentProperties.length > 0 ? (
-                <CollapsibleDetails className="diff-layer">
-                  <summary>
-                    <span>
-                      <strong>Component properties</strong>
-                      <small>{instance.componentProperties.length} changed</small>
-                    </span>
-                  </summary>
-                  {instance.componentProperties.map((difference) => (
-                    <DifferenceRow
-                      key={difference.id}
-                      label={difference.propertyName}
-                      rawLabel={`${difference.propertyType} · ${difference.propertyKey}`}
-                      original={difference.original}
-                      current={difference.current}
-                      onNavigate={() => send({ type: 'NAVIGATE_DIFF', nodeId: instance.instanceId })}
-                    />
-                  ))}
-                </CollapsibleDetails>
-              ) : null}
-
               {instance.layers.map((layer) => (
                 <CollapsibleDetails className="diff-layer" key={layer.nodeId}>
                   <summary>
@@ -145,7 +140,6 @@ export function DiffPanel({ payload }: { payload: DiffScanPayload | null }) {
                       rawLabel={`${difference.category} · ${difference.field}`}
                       original={difference.original}
                       current={difference.current}
-                      mapping={difference.mapping}
                       onNavigate={() =>
                         send({ type: 'NAVIGATE_DIFF', nodeId: difference.affectedNodeId })
                       }
@@ -157,12 +151,119 @@ export function DiffPanel({ payload }: { payload: DiffScanPayload | null }) {
           ))
         )}
       </main>
+      <CodePanel
+        code={css}
+        preferences={preferences}
+        onPreferences={onPreferences}
+      />
       <footer className="statusbar">
         <span>{payload.instances.length} changed instances</span>
         <span>{payload.unchangedInstanceCount} unchanged hidden</span>
       </footer>
-    </>
+    </div>
   )
+}
+
+function CodePanel({
+  code,
+  preferences,
+  onPreferences,
+}: {
+  code: string
+  preferences: DiffCodePreferences
+  onPreferences: (preferences: DiffCodePreferences) => void
+}) {
+  const [copied, setCopied] = useState(false)
+
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(code)
+    } catch {
+      const textarea = document.createElement('textarea')
+      textarea.value = code
+      textarea.style.position = 'fixed'
+      textarea.style.opacity = '0'
+      document.body.appendChild(textarea)
+      textarea.select()
+      document.execCommand('copy')
+      textarea.remove()
+    }
+    setCopied(true)
+    window.setTimeout(() => setCopied(false), 1400)
+  }
+
+  function resizeStart(event: React.PointerEvent<HTMLDivElement>) {
+    event.currentTarget.setPointerCapture?.(event.pointerId)
+    const originY = event.clientY
+    const originHeight = preferences.height
+    const target = event.currentTarget
+    const move = (moveEvent: PointerEvent) => {
+      onPreferences({
+        ...preferences,
+        height: clampDiffCodePanelHeight(originHeight + originY - moveEvent.clientY),
+      })
+    }
+    const up = () => {
+      target.removeEventListener('pointermove', move)
+      target.removeEventListener('pointerup', up)
+    }
+    target.addEventListener('pointermove', move)
+    target.addEventListener('pointerup', up)
+  }
+
+  return (
+    <section
+      className={`code-panel ${preferences.collapsed ? 'collapsed' : ''}`}
+      style={preferences.collapsed ? undefined : { height: preferences.height }}
+      aria-label="Generated CSS"
+    >
+      {!preferences.collapsed ? (
+        <div className="code-resize-handle" onPointerDown={resizeStart} />
+      ) : null}
+      <div className="code-panel-toolbar">
+        <strong>CSS</strong>
+        <select
+          aria-label="CSS scope"
+          value={preferences.scope}
+          onChange={(event) =>
+            onPreferences({
+              ...preferences,
+              scope: event.target.value as DiffCodeScope,
+            })
+          }
+        >
+          <option value="matched-properties">Matched properties</option>
+          <option value="selected-categories">Selected categories</option>
+          <option value="full-layers">Full matching layers</option>
+        </select>
+        <button type="button" onClick={() => void copy()}>
+          {copied ? 'Copied' : 'Copy'}
+        </button>
+        <button
+          type="button"
+          aria-label={preferences.collapsed ? 'Expand CSS panel' : 'Collapse CSS panel'}
+          onClick={() =>
+            onPreferences({ ...preferences, collapsed: !preferences.collapsed })
+          }
+        >
+          {preferences.collapsed ? 'Expand' : 'Collapse'}
+        </button>
+      </div>
+      {!preferences.collapsed ? (
+        <pre className="code-output"><code>{highlightCss(code)}</code></pre>
+      ) : null}
+    </section>
+  )
+}
+
+function highlightCss(code: string): ReactNode[] {
+  return code.split('\n').map((line, index) => {
+    let className = 'css-value'
+    if (line.trim().startsWith('/*')) className = 'css-comment'
+    else if (line.trim().endsWith('{') || line.trim() === '}') className = 'css-selector'
+    else if (line.includes(':')) className = 'css-declaration'
+    return <span className={className} key={`${index}:${line}`}>{line}{'\n'}</span>
+  })
 }
 
 function CollapsibleDetails({
@@ -189,14 +290,12 @@ function DifferenceRow({
   rawLabel,
   original,
   current,
-  mapping,
   onNavigate,
 }: {
   label: string
   rawLabel: string
   original: DiffValue
   current: DiffValue
-  mapping?: LayerFieldDifference['mapping']
   onNavigate: () => void
 }) {
   return (
@@ -213,15 +312,15 @@ function DifferenceRow({
         <span className="diff-arrow">→</span>
         <DiffValueView label="Instance" value={current} />
       </div>
-      {mapping === 'unavailable' ? (
-        <div className="mapping-warning">Original layer mapping unavailable; the override is still reported by Figma.</div>
-      ) : null}
-      {(original.kind === 'complex' || current.kind === 'complex') ? (
+      {(original.kind === 'complex' ||
+        current.kind === 'complex' ||
+        original.tokens?.length ||
+        current.tokens?.length) ? (
         <details className="raw-details">
           <summary>Raw details</summary>
           <div className="raw-grid">
-            <pre>{original.detail || 'Unavailable'}</pre>
-            <pre>{current.detail || 'Unavailable'}</pre>
+            <RawValue value={original} />
+            <RawValue value={current} />
           </div>
         </details>
       ) : null}
@@ -239,6 +338,42 @@ function DiffValueView({ label, value }: { label: string; value: DiffValue }) {
         ) : null}
         {value.preview}
       </span>
+      {value.tokens?.map((token) => (
+        <TokenLabel key={`${token.variableId}:${token.modeId}`} token={token} />
+      ))}
+    </div>
+  )
+}
+
+function TokenLabel({ token }: { token: VariableProvenance }) {
+  return (
+    <span className={`token-label ${token.status !== 'resolved' ? 'token-warning' : ''}`}>
+      {token.collectionName} / {token.variableName}
+    </span>
+  )
+}
+
+function RawValue({ value }: { value: DiffValue }) {
+  return (
+    <div className="raw-value">
+      <pre>{value.detail || 'Unavailable'}</pre>
+      {value.tokens?.map((token) => (
+        <div className="token-detail" key={`${token.variableId}:${token.modeId}`}>
+          <strong>
+            {token.collectionName} / {token.variableName}
+          </strong>
+          <span>
+            {token.modeName} · {token.status} · resolves to {token.resolvedPreview}
+          </span>
+          {token.aliasChain.length > 1 ? (
+            <span>
+              {token.aliasChain
+                .map((step) => `${step.collectionName} / ${step.variableName} [${step.modeName}]`)
+                .join(' → ')}
+            </span>
+          ) : null}
+        </div>
+      ))}
     </div>
   )
 }
@@ -260,27 +395,8 @@ function DiffEmpty({
   )
 }
 
-function matchesComponentProperty(
-  difference: ComponentPropertyDifference,
-  query: string,
-  instanceName: string,
-): boolean {
-  if (!query) return true
-  return [
-    instanceName,
-    difference.propertyName,
-    difference.propertyKey,
-    difference.propertyType,
-    difference.original.preview,
-    difference.current.preview,
-  ]
-    .join(' ')
-    .toLowerCase()
-    .includes(query)
-}
-
 function matchesLayerDifference(
-  difference: LayerFieldDifference,
+  difference: VisualDifference,
   query: string,
   instanceName: string,
 ): boolean {
@@ -294,6 +410,14 @@ function matchesLayerDifference(
     difference.category,
     difference.original.preview,
     difference.current.preview,
+    ...(difference.original.tokens ?? []).flatMap((token) => [
+      token.collectionName,
+      token.variableName,
+    ]),
+    ...(difference.current.tokens ?? []).flatMap((token) => [
+      token.collectionName,
+      token.variableName,
+    ]),
   ]
     .join(' ')
     .toLowerCase()

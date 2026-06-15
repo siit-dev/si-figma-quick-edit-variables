@@ -1,6 +1,7 @@
 import {
   ACTIVE_TAB_STORAGE_KEY,
   DEFAULT_WINDOW_SIZE,
+  DIFF_CODE_PREFS_STORAGE_KEY,
   MAX_WINDOW_SIZE,
   MIN_WINDOW_SIZE,
   PLUGIN_NAME,
@@ -8,10 +9,12 @@ import {
 } from '../shared/constants'
 import type {
   AppTab,
+  DiffCodePreferences,
   MainToUiMessage,
   UiToMainMessage,
   WindowSize,
 } from '../shared/types'
+import { normalizeDiffCodePreferences } from '../shared/diff-code-preferences'
 import { applyMutation, mutationErrorPayload } from './mutations'
 import { scanInstanceDiff } from './diff-scanner'
 import { scanSelection } from './scanner'
@@ -24,6 +27,7 @@ let activeTab: AppTab = 'variables'
 let pinnedDiffRootIds: string[] = []
 let programmaticSelectionId: string | null = null
 let diffRefreshTimer: ReturnType<typeof setTimeout> | undefined
+let diffCodePreferences: DiffCodePreferences
 
 void start()
 
@@ -32,6 +36,9 @@ async function start(): Promise<void> {
     (await figma.clientStorage.getAsync(WINDOW_SIZE_STORAGE_KEY)) as WindowSize | undefined,
   )
   activeTab = normalizeTab(await figma.clientStorage.getAsync(ACTIVE_TAB_STORAGE_KEY))
+  diffCodePreferences = normalizeDiffCodePreferences(
+    await figma.clientStorage.getAsync(DIFF_CODE_PREFS_STORAGE_KEY),
+  )
   pinnedDiffRootIds = figma.currentPage.selection.map((node) => node.id)
   figma.showUI(__html__, {
     width: windowSize.width,
@@ -87,6 +94,7 @@ async function handleMessage(message: UiToMainMessage, initialWindowSize: Window
           diffPayload,
           activeTab,
           windowSize: initialWindowSize,
+          diffCodePreferences,
         })
         break
       }
@@ -155,6 +163,15 @@ async function handleMessage(message: UiToMainMessage, initialWindowSize: Window
         programmaticSelectionId = node.id
         figma.currentPage.selection = [node]
         figma.viewport.scrollAndZoomIntoView([node])
+        break
+      }
+      case 'SAVE_DIFF_CODE_PREFS': {
+        diffCodePreferences = normalizeDiffCodePreferences(message.preferences)
+        await figma.clientStorage.setAsync(
+          DIFF_CODE_PREFS_STORAGE_KEY,
+          diffCodePreferences,
+        )
+        post({ type: 'DIFF_CODE_PREFS_RESULT', preferences: diffCodePreferences })
         break
       }
     }

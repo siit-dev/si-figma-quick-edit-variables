@@ -1,0 +1,62 @@
+name: Bug report
+description: Report a reproducible plugin problem without sharing confidential data.
+title: "[Bug] "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Do not include confidential Figma files, credentials, access tokens, or customer data.
+        Security vulnerabilities must use private vulnerability reporting instead.
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Variables
+        - Instance Diff
+        - CSS panel
+        - Settings
+        - Build or installation
+        - Other
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Plugin version
+      placeholder: "1.0.0"
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Figma and operating-system versions
+      placeholder: "Figma Desktop version, Windows or macOS version"
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Reproduction steps
+      description: Use a sanitized fixture whenever possible.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+    validations:
+      required: true
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Sanitized diagnostics
+      description: Add screenshots or plugin-console errors after removing sensitive information.

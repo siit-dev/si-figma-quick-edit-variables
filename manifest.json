@@ -1,5 +1,5 @@
 {
-  "name": "SmartImpact Quick Edit Variables",
+  "name": "SmartImpact Figma Quick Edit Variables",
   "id": "quick-edit-variables-local-dev",
   "api": "1.0.0",
   "main": "dist/code.js",

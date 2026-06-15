@@ -1,0 +1,33 @@
+name: Privacy question
+description: Ask a non-sensitive question about plugin data handling.
+title: "[Privacy] "
+labels:
+  - privacy
+body:
+  - type: markdown
+    attributes:
+      value: |
+        GitHub issues are public. Do not include personal data, confidential Figma files,
+        credentials, access tokens, or customer information.
+
+        Report security-sensitive concerns through private vulnerability reporting instead.
+  - type: dropdown
+    id: topic
+    attributes:
+      label: Topic
+      options:
+        - Data processed by the plugin
+        - Figma document plugin data
+        - Figma clientStorage preferences
+        - Clipboard behavior
+        - Data deletion or retention
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: question
+    attributes:
+      label: Question
+      description: Provide only the minimum non-sensitive context needed.
+    validations:
+      required: true

@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { App } from '../src/ui/App'
 import { DiffPanel } from '../src/ui/components/DiffPanel'
 import type { DiffScanPayload, ScanPayload } from '../src/shared/types'
+import { DEFAULT_DIFF_CODE_PREFERENCES } from '../src/shared/diff-code-preferences'
 
 const diffPayload: DiffScanPayload = {
   roots: [{ id: 'root', name: 'Audit fixture' }],
@@ -18,35 +19,83 @@ const diffPayload: DiffScanPayload = {
       mainComponentName: 'State=Default',
       mainComponentRemote: false,
       differenceCount: 2,
-      componentProperties: [
-        {
-          id: 'property',
-          propertyKey: 'Label#1:2',
-          propertyName: 'Label',
-          propertyType: 'TEXT',
-          original: { preview: 'Action', detail: '"Action"', kind: 'scalar' },
-          current: { preview: 'Changed action', detail: '"Changed action"', kind: 'scalar' },
-        },
-      ],
       layers: [
         {
-          nodeId: 'text',
-          nodeName: 'Subtitle',
-          nodeType: 'TEXT',
-          nodePath: ['State=Default', 'Subtitle'],
+          nodeId: 'badge',
+          nodeName: 'Status badge',
+          nodeType: 'RECTANGLE',
+          nodePath: ['State=Default', 'Status badge'],
+          currentProperties: [
+            {
+              field: 'fills',
+              label: 'Fill',
+              category: 'appearance',
+              value: {
+                preview: '#FF5533',
+                detail: JSON.stringify([
+                  { type: 'SOLID', color: { r: 1, g: 0.333, b: 0.2 } },
+                ]),
+                kind: 'complex',
+              },
+            },
+            {
+              field: 'paddingLeft',
+              label: 'Padding left',
+              category: 'spacing',
+              value: { preview: '24 px', detail: '24', kind: 'scalar' },
+            },
+          ],
           differences: [
             {
-              id: 'characters',
-              affectedNodeId: 'text',
-              affectedNodeName: 'Subtitle',
-              affectedNodeType: 'TEXT',
-              nodePath: ['State=Default', 'Subtitle'],
-              field: 'characters',
-              label: 'Characters',
-              category: 'content',
-              original: { preview: 'Original', detail: '"Original"', kind: 'scalar' },
-              current: { preview: 'Changed', detail: '"Changed"', kind: 'scalar' },
-              mapping: 'exact',
+              id: 'fill',
+              affectedNodeId: 'badge',
+              affectedNodeName: 'Status badge',
+              affectedNodeType: 'RECTANGLE',
+              nodePath: ['State=Default', 'Status badge'],
+              field: 'fills',
+              label: 'Fill',
+              category: 'appearance',
+              original: {
+                preview: '#1677FF',
+                detail: '{}',
+                kind: 'complex',
+                tokens: [
+                  {
+                    variableId: 'primary',
+                    variableName: 'color/primary',
+                    collectionId: 'semantic',
+                    collectionName: 'Semantic',
+                    modeId: 'light',
+                    modeName: 'Light',
+                    resolvedType: 'COLOR',
+                    resolvedPreview: '#1677FF',
+                    status: 'resolved',
+                    aliasChain: [
+                      {
+                        variableId: 'primary',
+                        variableName: 'color/primary',
+                        collectionId: 'semantic',
+                        collectionName: 'Semantic',
+                        modeId: 'light',
+                        modeName: 'Light',
+                      },
+                    ],
+                  },
+                ],
+              },
+              current: { preview: '#FF5533', detail: '{}', kind: 'complex' },
+            },
+            {
+              id: 'padding',
+              affectedNodeId: 'badge',
+              affectedNodeName: 'Status badge',
+              affectedNodeType: 'RECTANGLE',
+              nodePath: ['State=Default', 'Status badge'],
+              field: 'paddingLeft',
+              label: 'Padding left',
+              category: 'spacing',
+              original: { preview: '16 px', detail: '16', kind: 'scalar' },
+              current: { preview: '24 px', detail: '24', kind: 'scalar' },
             },
           ],
         },
@@ -77,27 +126,78 @@ describe('Instance Diff UI', () => {
     vi.restoreAllMocks()
   })
 
-  it('filters by search and category and navigates to affected layers', () => {
-    render(<DiffPanel payload={diffPayload} />)
+  it('filters visual properties and shows resolved token names', () => {
+    render(
+      <DiffPanel
+        payload={diffPayload}
+        preferences={DEFAULT_DIFF_CODE_PREFERENCES}
+        onPreferences={vi.fn()}
+      />,
+    )
+    expect(screen.getAllByText('Semantic / color/primary')).not.toHaveLength(0)
 
     fireEvent.change(screen.getByPlaceholderText('Search instances, layers, or fields'), {
-      target: { value: 'subtitle' },
+      target: { value: 'padding' },
     })
-    expect(screen.getByText('Characters')).toBeInTheDocument()
-    expect(screen.queryByText('Label')).not.toBeInTheDocument()
+    expect(screen.getByText('Padding left')).toBeInTheDocument()
+    expect(screen.queryByText('Fill')).not.toBeInTheDocument()
 
     fireEvent.change(screen.getByPlaceholderText('Search instances, layers, or fields'), {
       target: { value: '' },
     })
-    fireEvent.click(screen.getByRole('button', { name: 'Appearance' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Typography' }))
     expect(screen.getByText('No differences match.')).toBeInTheDocument()
+  })
 
-    fireEvent.click(screen.getByRole('button', { name: 'Appearance' }))
-    fireEvent.click(screen.getAllByText('Locate')[1]!)
+  it('navigates to the affected layer', () => {
+    render(
+      <DiffPanel
+        payload={diffPayload}
+        preferences={DEFAULT_DIFF_CODE_PREFERENCES}
+        onPreferences={vi.fn()}
+      />,
+    )
+    fireEvent.click(screen.getAllByText('Locate')[0]!)
     expect(postMessage).toHaveBeenLastCalledWith(
-      { pluginMessage: { type: 'NAVIGATE_DIFF', nodeId: 'text' } },
+      { pluginMessage: { type: 'NAVIGATE_DIFF', nodeId: 'badge' } },
       '*',
     )
+  })
+
+  it('copies generated CSS and updates code-panel preferences', async () => {
+    const writeText = vi.fn(async () => undefined)
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText },
+    })
+    const onPreferences = vi.fn()
+    render(
+      <DiffPanel
+        payload={diffPayload}
+        preferences={DEFAULT_DIFF_CODE_PREFERENCES}
+        onPreferences={onPreferences}
+      />,
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'Copy' }))
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith(
+      expect.stringContaining('.status-badge {'),
+    ))
+    expect(await screen.findByRole('button', { name: 'Copied' })).toBeInTheDocument()
+
+    fireEvent.change(screen.getByLabelText('CSS scope'), {
+      target: { value: 'full-layers' },
+    })
+    expect(onPreferences).toHaveBeenCalledWith({
+      ...DEFAULT_DIFF_CODE_PREFERENCES,
+      scope: 'full-layers',
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Collapse CSS panel' }))
+    expect(onPreferences).toHaveBeenCalledWith({
+      ...DEFAULT_DIFF_CODE_PREFERENCES,
+      collapsed: true,
+    })
   })
 
   it('requests a current-selection refresh from the remembered Diff tab', async () => {
@@ -111,6 +211,7 @@ describe('Instance Diff UI', () => {
             diffPayload,
             activeTab: 'diff',
             windowSize: { width: 500, height: 700 },
+            diffCodePreferences: DEFAULT_DIFF_CODE_PREFERENCES,
           },
         },
       }),

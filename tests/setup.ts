@@ -27,8 +27,9 @@ Object.assign(globalThis, {
         type: 'VARIABLE_ALIAS',
         id: variable.id,
       })),
+      getVariableByIdAsync: vi.fn(async () => null),
+      getVariableCollectionByIdAsync: vi.fn(async () => null),
     },
     loadFontAsync: vi.fn(),
   },
 })
-
