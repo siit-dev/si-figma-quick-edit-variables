@@ -1,0 +1,121 @@
+name: Release plugin package
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  package:
+    name: Build and upload release ZIP
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Test
+        run: npm test
+
+      - name: Validate manifest
+        run: npm run release:check
+
+      - name: Build release package
+        run: npm run package:plugin
+
+      - name: Resolve release metadata
+        id: meta
+        shell: bash
+        run: |
+          version="$(node -p "require('./package.json').version")"
+          tag="v${version}"
+          zip_name="smartimpact-figma-quick-edit-variables-${tag}.zip"
+          zip_path="release/${zip_name}"
+
+          if [[ "${GITHUB_REF_TYPE}" == "tag" && "${GITHUB_REF_NAME}" != "${tag}" ]]; then
+            echo "Tag ${GITHUB_REF_NAME} does not match package.json version ${version}." >&2
+            exit 1
+          fi
+
+          if [[ ! -f "${zip_path}" ]]; then
+            echo "Expected package not found: ${zip_path}" >&2
+            exit 1
+          fi
+
+          {
+            echo "tag=${tag}"
+            echo "zip_name=${zip_name}"
+            echo "zip_path=${zip_path}"
+          } >> "${GITHUB_OUTPUT}"
+
+      - name: Verify ZIP contents
+        env:
+          ZIP_PATH: ${{ steps.meta.outputs.zip_path }}
+        run: |
+          node --input-type=module <<'NODE'
+          import { readFile } from 'node:fs/promises'
+          import { unzipSync } from 'fflate'
+
+          const expected = ['dist/code.js', 'dist/ui.html', 'manifest.json'].sort()
+          const actual = Object.keys(
+            unzipSync(new Uint8Array(await readFile(process.env.ZIP_PATH))),
+          ).sort()
+
+          if (JSON.stringify(actual) !== JSON.stringify(expected)) {
+            console.error(`Unexpected ZIP contents: ${JSON.stringify(actual)}`)
+            process.exit(1)
+          }
+
+          console.log(`Verified ZIP contents: ${actual.join(', ')}`)
+          NODE
+
+      - name: Write release notes
+        run: |
+          cat > release-notes.md <<'EOF'
+          Ready-to-import Figma development plugin package.
+
+          Download the ZIP, unzip it, then import the included `manifest.json` in Figma Desktop from **Plugins → Development → Import plugin from manifest**.
+
+          The ZIP contains only:
+
+          - `manifest.json`
+          - `dist/code.js`
+          - `dist/ui.html`
+
+          No Node.js install, npm install, or local build is required.
+          EOF
+
+      - name: Create or update GitHub release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.meta.outputs.tag }}
+          ZIP_NAME: ${{ steps.meta.outputs.zip_name }}
+          ZIP_PATH: ${{ steps.meta.outputs.zip_path }}
+        run: |
+          if gh release view "${TAG}" --repo "${GITHUB_REPOSITORY}" >/dev/null 2>&1; then
+            gh release upload "${TAG}" "${ZIP_PATH}#${ZIP_NAME}" \
+              --repo "${GITHUB_REPOSITORY}" \
+              --clobber
+          else
+            gh release create "${TAG}" "${ZIP_PATH}#${ZIP_NAME}" \
+              --repo "${GITHUB_REPOSITORY}" \
+              --target "${GITHUB_SHA}" \
+              --title "SmartImpact Figma Quick Edit Variables ${TAG}" \
+              --notes-file release-notes.md
+          fi
