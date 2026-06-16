@@ -15,6 +15,21 @@ instances with their current variants, and generating CSS from visual changes.
 - Generate copyable CSS for matching changed layers.
 - Use persistent, resizable plugin and CSS-panel layouts in light or dark Figma themes.
 
+## Download Without Building
+
+For manual installation without Node.js or build tools:
+
+1. Download `smartimpact-figma-quick-edit-variables-v1.0.0.zip` from
+   [GitHub Releases](https://github.com/siit-dev/si-figma-quick-edit-variables/releases).
+2. Unzip it locally.
+3. In Figma Desktop, open a design file.
+4. Select **Plugins → Development → Import plugin from manifest**.
+5. Choose the unzipped `manifest.json`.
+6. Run **SmartImpact Figma Quick Edit Variables** from the development plugins menu.
+
+The public Figma Community listing remains the recommended install path once
+the plugin is approved.
+
 ## Install For Development
 
 Requirements:
@@ -27,6 +42,7 @@ npm install
 npm run typecheck
 npm test
 npm run build
+npm run package:plugin
 ```
 
 Then open Figma and select:
